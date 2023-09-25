@@ -374,7 +374,7 @@ The p-values are less than 0.05 for Horsepower, Torque, and Height, so these thr
 
 #### (d)
 
-``` stats
+``` stata
 . do "C:\Users\11716\AppData\Local\Temp\STD3248_000000.tmp"
 
 . regress Highway_mpg c.Horsepower c.Torque c.Height c.Length c.Width i.Year
