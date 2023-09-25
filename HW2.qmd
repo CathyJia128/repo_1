@@ -1,0 +1,537 @@
+---
+title: "STATS 506 HW2"
+author: "Yixuan Jia"
+format: 
+  html:
+    embed-resources: true
+editor: visual
+---
+
+## Problem 1
+
+#### (a)
+
+Version 1:
+
+```{r}
+play_dice_1 <- function(n) {
+  total <- 0  # Initializing
+  for (i in 1:n) {
+    roll <- sample(1:6, 1)  # Simulate a dice roll
+    if (roll %% 2 == 0) {
+      total <- total + roll
+    }
+  }
+  total = total - (2 * n) # cost to play
+  
+  return(total)
+}
+```
+
+Version 2:
+
+```{r}
+play_dice_2 <- function(n) {
+  rolls <- sample(1:6, n, replace = TRUE)  # Simulate multiple dice rolls
+  
+  winnings <- ifelse(rolls %% 2 == 0, rolls, 0)
+  total <- sum(winnings)  # Calculate total winnings
+  
+  total = total - (2 * n)
+  
+  return(total)
+}
+```
+
+Version 3:
+
+```{r}
+play_dice_3 <- function(n) {
+  # Simulate n dice rolls and create a frequency table of outcomes
+  rolls <- table(sample(1:6, n, replace = TRUE))
+  
+  # Define the winning numbers (2, 4, 6)
+  winning_numbers <- c(2, 4, 6)
+  
+  # Calculate the total winnings
+  total <- sum(rolls[names(rolls) %in% winning_numbers] * as.integer(names(rolls)[names(rolls) %in% winning_numbers]))
+  
+  total = total - (2 * n)
+  
+  return(total)
+}
+
+
+```
+
+Version 4:
+
+```{r}
+play_dice_4<- function(n) {
+  rolls <- sample(1:6, n, replace = TRUE)
+  
+  # Calculate the winnings for each roll
+  winnings <- sapply(rolls, function(roll) {
+    if (roll %in% c(2, 4, 6)) {
+      return(roll)
+    } else {
+      return(0)
+    }
+  })
+  
+  total <- sum(winnings)
+  
+  total = total - (2 * n)
+  
+  return(total)
+}
+```
+
+#### (b)
+
+```{r}
+print(play_dice_1(3))
+print(play_dice_1(3000))
+print(play_dice_2(3))
+print(play_dice_2(3000))
+print(play_dice_3(3))
+print(play_dice_3(3000))
+print(play_dice_4(3))
+print(play_dice_4(3000))
+```
+
+#### (c)
+
+```{r}
+n_values <- c(3, 3000)  # Create a vector of n values
+
+for (n in n_values) {
+  set.seed(506)
+  total1 <- play_dice_1(n)
+  cat("Total winnings using version 1 after", n, "rounds", total1, "\n")
+  set.seed(506)
+  total2 <- play_dice_2(n)
+  cat("Total winnings using version 2 after", n, "rounds", total2, "\n")
+  set.seed(506)
+  total3 <- play_dice_3(n)
+  cat("Total winnings using version 3 after", n, "rounds", total3, "\n")
+  set.seed(506)
+  total4 <- play_dice_4(n)
+  cat("Total winnings using version 4 after", n, "rounds", total4, "\n")
+}
+```
+
+#### (d)
+
+```{r}
+library(microbenchmark)
+```
+
+```{r}
+n_low <- 100
+
+# Version 1
+microbenchmark(play_dice_1(n_low))
+# Version 2
+microbenchmark(play_dice_2(n_low))
+# Version 3
+microbenchmark(play_dice_3(n_low))
+# Version 4
+microbenchmark(play_dice_4(n_low))
+```
+
+For n_low = 100, the speed ranking of the four implementations are as follows: Version 2 \> Version 3 \> Version 4 \> Version 1 (Version 4 is the fastest).
+
+```{r}
+n_large <- 10000
+
+# Version 1
+microbenchmark(play_dice_1(n_large))
+# Version 2
+microbenchmark(play_dice_2(n_large))
+# Version 3
+microbenchmark(play_dice_3(n_large))
+# Version 4
+microbenchmark(play_dice_4(n_large))
+```
+
+For n_large = 100,00 the speed ranking of the four implementations are still as follows: Version 2 \> Version 3 \> Version 4 \> Version 1 (Version 4 is the fastest).
+
+#### (e)
+
+```{r}
+# Since version 2 is the fastest, I will do simulations using version 2
+set.seed(506)
+num <- 10000
+n <- 300
+winnings <- numeric(num)
+
+for (i in 1:num) {
+  winnings[i] <- play_dice_2(n)
+}
+```
+
+```{r}
+t.test(winnings)
+```
+
+From the t-test of 10000 simulations for n = 300 rounds, we can see that the mean of total winnings is 0.6868, which is very close to zero.
+
+Also, the p-value of this test is 0.0873, so we cannot reject the null hypothesis that "the mean of these 10000 simulations is 0.". Therefore we can conclude that the mean winnings of this dice game is not significantly different from 0. In other words, this is a fair game.
+
+## Problem 2
+
+#### (a)
+
+```{r}
+library(interactions)
+library(ggplot2)
+library(emmeans)
+cars <- read.csv("cars.csv", header = TRUE)
+```
+
+```{r}
+new_cols <- c("Height", "Length", "Width",'Driveline','Engine_Type','Engine_Hybrid','Num_Forward_Gears','Transmission','City_mpg','Fuel_Type','Highway_mpg','Classification','ID','Make','Model_Year','Year','Horsepower','Torque')
+colnames(cars) <- new_cols
+```
+
+#### (b)
+
+```{r}
+cars <- cars[cars["Fuel_Type"] == "Gasoline",]
+cars$Year <- factor(cars$Year)
+```
+
+#### (c)
+
+```{r}
+model1 <- lm(Highway_mpg ~ Horsepower + Torque + Height + Length + Width + Year, data = cars)
+
+summary(model1)
+```
+
+Based on the output, Highway_mpg increases 0.0164 when Horsepower increases 1 unit.
+
+Also, we can see that the p-values are less than 0.05 for Horsepower, Torque, and Height, so these three are significant predictors for Highway_mpg. Horsepower and Height have positive effects on Highway_mpg while Torque has negative effects on that.
+
+#### (d)
+
+```{r}
+model2 <- lm(Highway_mpg ~ Horsepower + Torque + Height + Length + Width + Year + Horsepower * Torque, data = cars)
+summary(model2)
+```
+
+```{r}
+print(summary(cars$Torque))
+
+value_counts <- table(cars$Torque)
+sorted_counts <- sort(value_counts, decreasing = TRUE)
+print(sorted_counts[1:10])
+```
+
+We can see that the values 270, 424, 172 are quite representative for the whole data set and they have more entries which makes the regression more likely to be accurate. So I will use there three values for the plot.
+
+```{r}
+print(summary(cars$Horsepower))
+```
+
+```{r}
+filtered_cars <- subset(cars, Torque %in% c(172, 270, 424))
+filtered_cars$Torque <- as.factor(filtered_cars$Torque)
+model3 <- lm(Highway_mpg ~ Horsepower + Torque + Height + Length + Width + Year + Horsepower * Torque, data = filtered_cars)
+
+emmip(model3, Torque ~ Horsepower, at = list(Horsepower = c(100, 200, 300, 400, 500, 600)))
+```
+
+We can see from the plot that for Torque = 172 and 424, there is a obvious negative relationship between Horsepower and Highway_mpg.
+
+And for Torque = 270, there is a slightly positive relationship between Horsepower and Highway_mpg.
+
+#### (e)
+
+```{r}
+cars$interaction = cars$Horsepower * cars$Torque
+
+cols = cars[, c("Horsepower", "Torque", "Height", "Length", "Width","interaction")]
+
+matrix_columns <- as.matrix(cols)
+
+X <- cbind(1, matrix_columns)
+
+y <- cars$Highway_mpg
+
+#Calculate the coeffience
+Beta_hat <- solve(t(X) %*% X) %*% t(X) %*% y
+
+Beta_hat
+```
+
+We can compare the results with the summary from model 2, and they are indeed the same.
+
+## Problem 3
+
+#### (a)
+
+``` stata
+. do "C:\Users\11716\AppData\Local\Temp\STD3248_000000.tmp"
+
+. cd "D:\Umich\Sem3\STATS 506\repo_1"
+. import delimited "cars.csv"
+. 
+. rename dimensionsheight Height
+
+. rename dimensionslength Length
+
+. rename dimensionswidth Width
+
+. rename engineinformationdriveline Driveline
+
+. rename engineinformationenginetype Engine_Type
+
+. rename engineinformationhybrid Engine_Hybrid
+
+. rename engineinformationnumberofforward Num_Forward_Gears
+
+. rename engineinformationtransmission Transmission
+
+. rename fuelinformationcitympg City_mpg
+
+. rename fuelinformationfueltype Fuel_Type
+
+. rename fuelinformationhighwaympg Highway_mpg
+
+. rename identificationclassification Classification
+
+. rename identificationid ID
+
+. rename identificationmake Make
+
+. rename identificationmodelyear Model_Year
+
+. rename identificationyear Year
+
+. rename engineinformationenginestatistic Horsepower
+
+. rename v18 Torque
+
+end of do-file
+
+. 
+```
+
+#### (b)
+
+``` stata
+. do "C:\Users\11716\AppData\Local\Temp\STD3248_000000.tmp"
+
+. keep if Fuel_Type == "Gasoline"
+(485 observations deleted)
+
+. 
+end of do-file
+```
+
+#### (c)
+
+``` stata
+. do "C:\Users\11716\AppData\Local\Temp\STD3248_000000.tmp"
+
+. . regress Highway_mpg c.Horsepower c.Torque c.Height c.Length c.Width i.Year
+
+      Source |       SS           df       MS      Number of obs   =     4,591
+-------------+----------------------------------   F(8, 4582)      =    413.35
+       Model |  70043.6695         8  8755.45869   Prob > F        =    0.0000
+    Residual |   97055.298     4,582  21.1818634   R-squared       =    0.4192
+-------------+----------------------------------   Adj R-squared   =    0.4182
+       Total |  167098.968     4,590  36.4050038   Root MSE        =    4.6024
+
+------------------------------------------------------------------------------
+ Highway_mpg | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+  Horsepower |   .0163556   .0022772     7.18   0.000     .0118913      .02082
+      Torque |  -.0507425    .002203   -23.03   0.000    -.0550614   -.0464236
+      Height |   .0099079   .0011267     8.79   0.000      .007699    .0121168
+      Length |    .001729   .0008836     1.96   0.050    -3.36e-06    .0034613
+       Width |  -.0003343   .0009045    -0.37   0.712    -.0021075    .0014388
+             |
+        Year |
+       2010  |  -.4539681   .6768246    -0.67   0.502     -1.78087    .8729342
+       2011  |   .1711016   .6757043     0.25   0.800    -1.153604    1.495808
+       2012  |   1.302928   .6810076     1.91   0.056    -.0321751    2.638031
+             |
+       _cons |   32.29266   .7225982    44.69   0.000     30.87602     33.7093
+------------------------------------------------------------------------------
+
+. 
+end of do-file
+
+. 
+```
+
+Same results as Problem 2. Highway_mpg increases 0.0164 when Horsepower increases 1 unit.
+
+The p-values are less than 0.05 for Horsepower, Torque, and Height, so these three are significant predictors for Highway_mpg. Horsepower and Height have positive effects on Highway_mpg while Torque has negative effects on that.
+
+#### (d)
+
+``` stats
+. do "C:\Users\11716\AppData\Local\Temp\STD3248_000000.tmp"
+
+. regress Highway_mpg c.Horsepower c.Torque c.Height c.Length c.Width i.Year
+
+      Source |       SS           df       MS      Number of obs   =     4,591
+-------------+----------------------------------   F(8, 4582)      =    413.35
+       Model |  70043.6695         8  8755.45869   Prob > F        =    0.0000
+    Residual |   97055.298     4,582  21.1818634   R-squared       =    0.4192
+-------------+----------------------------------   Adj R-squared   =    0.4182
+       Total |  167098.968     4,590  36.4050038   Root MSE        =    4.6024
+
+------------------------------------------------------------------------------
+ Highway_mpg | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+  Horsepower |   .0163556   .0022772     7.18   0.000     .0118913      .02082
+      Torque |  -.0507425    .002203   -23.03   0.000    -.0550614   -.0464236
+      Height |   .0099079   .0011267     8.79   0.000      .007699    .0121168
+      Length |    .001729   .0008836     1.96   0.050    -3.36e-06    .0034613
+       Width |  -.0003343   .0009045    -0.37   0.712    -.0021075    .0014388
+             |
+        Year |
+       2010  |  -.4539681   .6768246    -0.67   0.502     -1.78087    .8729342
+       2011  |   .1711016   .6757043     0.25   0.800    -1.153604    1.495808
+       2012  |   1.302928   .6810076     1.91   0.056    -.0321751    2.638031
+             |
+       _cons |   32.29266   .7225982    44.69   0.000     30.87602     33.7093
+------------------------------------------------------------------------------
+
+. . 
+
+. . regress Highway_mpg c.Horsepower##c.Torque c.Height c.Length c.Width
+
+      Source |       SS           df       MS      Number of obs   =     4,591
+-------------+----------------------------------   F(6, 4584)      =    686.16
+       Model |   79064.613         6  13177.4355   Prob > F        =    0.0000
+    Residual |  88034.3545     4,584  19.2047021   R-squared       =    0.4732
+-------------+----------------------------------   Adj R-squared   =    0.4725
+       Total |  167098.968     4,590  36.4050038   Root MSE        =    4.3823
+
+---------------------------------------------------------------------------------------
+          Highway_mpg | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+----------------------+----------------------------------------------------------------
+           Horsepower |  -.0148094   .0025612    -5.78   0.000    -.0198306   -.0097882
+               Torque |  -.0878731   .0025559   -34.38   0.000    -.0928839   -.0828623
+                      |
+c.Horsepower#c.Torque |   .0001123   4.68e-06    24.00   0.000     .0001032    .0001215
+                      |
+               Height |   .0067153    .001078     6.23   0.000     .0046019    .0088287
+               Length |   .0014458   .0008401     1.72   0.085    -.0002013    .0030928
+                Width |  -.0011013   .0008609    -1.28   0.201    -.0027891    .0005864
+                _cons |   42.30721   .5144734    82.23   0.000      41.2986    43.31583
+---------------------------------------------------------------------------------------
+
+. 
+end of do-file
+
+. 
+```
+
+Below is for the plot:
+
+``` stata
+. keep if Torque == 172 | Torque == 270 | Torque == 424
+(4,261 observations deleted)
+
+. . regress Highway_mpg c.Horsepower##i.Torque c.Height c.Length c.Width i.Year
+
+      Source |       SS           df       MS      Number of obs   =       330
+-------------+----------------------------------   F(11, 318)      =    102.58
+       Model |  2625.27142        11  238.661039   Prob > F        =    0.0000
+    Residual |  739.883122       318  2.32667648   R-squared       =    0.7801
+-------------+----------------------------------   Adj R-squared   =    0.7725
+       Total |  3365.15455       329  10.2284333   Root MSE        =    1.5253
+
+-------------------------------------------------------------------------------------
+        Highway_mpg | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+--------------------+----------------------------------------------------------------
+         Horsepower |  -.0436885    .038945    -1.12   0.263     -.120311     .032934
+                    |
+             Torque |
+               270  |   -13.7935   7.451872    -1.85   0.065     -28.4547    .8677032
+               424  |   38.94594   9.012624     4.32   0.000     21.21404    56.67785
+                    |
+Torque#c.Horsepower |
+               270  |   .0440871   .0398659     1.11   0.270     -.034347    .1225213
+               424  |  -.0757316   .0410262    -1.85   0.066    -.1564488    .0049855
+                    |
+             Height |  -.0021365   .0017023    -1.26   0.210    -.0054857    .0012128
+             Length |   .0027855   .0013118     2.12   0.034     .0002047    .0053663
+              Width |   -.009217   .0019866    -4.64   0.000    -.0131256   -.0053085
+                    |
+               Year |
+              2010  |  -1.235853   .8104016    -1.52   0.128    -2.830279    .3585732
+              2011  |  -1.102701   .8086546    -1.36   0.174     -2.69369    .4882882
+              2012  |  -.2921526   .8133018    -0.36   0.720    -1.892285     1.30798
+                    |
+              _cons |   39.84346   7.108412     5.61   0.000       25.858    53.82892
+-------------------------------------------------------------------------------------
+
+. . margins Torque, at(Horsepower = (200(50)600))
+
+Predictive margins                                         Number of obs = 330
+Model VCE: OLS
+
+Expression: Linear prediction, predict()
+1._at: Horsepower = 200
+2._at: Horsepower = 250
+3._at: Horsepower = 300
+4._at: Horsepower = 350
+5._at: Horsepower = 400
+6._at: Horsepower = 450
+7._at: Horsepower = 500
+8._at: Horsepower = 550
+9._at: Horsepower = 600
+
+------------------------------------------------------------------------------
+             |            Delta-method
+             |     Margin   std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+  _at#Torque |
+      1 172  |   29.26736   .7721136    37.91   0.000     27.74826    30.78646
+      1 270  |   24.29129   .7336017    33.11   0.000     22.84797    25.73462
+      1 424  |   53.06697   3.037173    17.47   0.000     47.09148    59.04246
+      2 172  |   27.08294   2.704019    10.02   0.000     21.76291    32.40296
+      2 270  |   24.31123   .3938553    61.73   0.000     23.53633    25.08612
+      2 424  |   47.09597   2.391566    19.69   0.000     42.39068    51.80126
+      3 172  |   24.89851   4.648747     5.36   0.000     15.75233     34.0447
+      3 270  |   24.33116    .166234   146.37   0.000      24.0041    24.65822
+      3 424  |   41.12496   1.746941    23.54   0.000     37.68794    44.56198
+      4 172  |   22.71409   6.594965     3.44   0.001     9.738812    35.68937
+      4 270  |   24.35109   .3945969    61.71   0.000     23.57474    25.12744
+      4 424  |   35.15396   1.105023    31.81   0.000     32.97988    37.32804
+      5 172  |   20.52967   8.541655     2.40   0.017     3.724371    37.33496
+      5 270  |   24.37103   .7343984    33.19   0.000     22.92613    25.81592
+      5 424  |   29.18295   .4768648    61.20   0.000     28.24474    30.12116
+      6 172  |   18.34524   10.48855     1.75   0.081    -2.290481    38.98097
+      6 270  |   24.39096   1.085604    22.47   0.000     22.25509    26.52684
+      6 424  |   23.21194   .2660397    87.25   0.000     22.68852    23.73536
+      7 172  |   16.16082   12.43556     1.30   0.195     -8.30555    40.62719
+      7 270  |    24.4109   1.439893    16.95   0.000     21.57797    27.24382
+      7 424  |   17.24094    .866722    19.89   0.000      15.5357    18.94617
+      8 172  |    13.9764   14.38264     0.97   0.332    -14.32075    42.27354
+      8 270  |   24.43083   1.795442    13.61   0.000     20.89838    27.96327
+      8 424  |   11.26993   1.506217     7.48   0.000     8.306524    14.23334
+      9 172  |   11.79197   16.32975     0.72   0.471    -20.33603    43.91998
+      9 270  |   24.45076   2.151625    11.36   0.000     20.21754    28.68398
+      9 424  |   5.298928   2.150169     2.46   0.014     1.068574    9.529281
+------------------------------------------------------------------------------
+
+. . marginsplot, xtitle(Horsepower) ytitle("Highway MPG")
+
+Variables that uniquely identify margins: Horsepower Torque
+
+. 
+end of do-file
+
+. 
+```
+
+![](Graph1.png)
