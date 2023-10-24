@@ -9,7 +9,7 @@ editor: visual
 
 ## Problem 1:
 
-#### a.
+#### a. 
 
 ``` stata
 
