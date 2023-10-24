@@ -1,7 +1,9 @@
 ---
 title: "STATS 506 HW3"
 author: "Yixuan Jia"
-format: html
+format:
+  html:
+    embed-resources: true
 editor: visual
 ---
 
@@ -397,13 +399,20 @@ print(percent(p1, accuracy = 0.01))
 #### b.
 
 ```{r}
-# Create a function to chaeck if there is any nonalphanumeric except for the "@" and "."
+# Create a function to check if there is any nonalphanumeric except for the "@" and "."
 
 has_non_alphanumeric <- function(email) {
   parts <- strsplit(email, "@")
+  domain_parts <- strsplit(parts[[1]][2], ".") # check if there are any non-alphanumeric in the domain part
+  
   if (grepl("[^A-Za-z0-9]", parts[[1]][1])) {
     return(TRUE)
-  } else {
+  }
+  else if (grepl("[^A-Za-z0-9]", domain_parts[[1]][1])) {
+    return(TRUE)
+  }
+  
+  else {
     return(FALSE)
   }
 }
@@ -456,7 +465,6 @@ colnames(street_and_unit) <- c("Address", "ApartmentNumber")
 street_and_unit <- data.frame(street_and_unit)
 
 street_and_unit <- street_and_unit[!is.na(street_and_unit$ApartmentNumber), ]
-street_and_unit$Address <- trimws(street_and_unit$Address)
 
 street_and_unit$ApartmentNumber <- as.numeric(street_and_unit$ApartmentNumber)
 

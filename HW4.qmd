@@ -1,0 +1,417 @@
+---
+title: "STATS 506 HW4"
+author: "Yixuan Jia"
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+## Problem 1:
+
+#### a.
+
+```{r, warning=FALSE}
+library(nycflights13)
+library(tidyverse)
+data(flights)
+```
+
+```{r}
+head(flights)
+head(airports)
+```
+
+```{r}
+departure_delays <- flights %>%
+  group_by(origin) %>%
+  filter(n() >= 10) %>%
+  summarise(
+    mean_delay = mean(dep_delay, na.rm = TRUE),
+    median_delay = median(dep_delay, na.rm = TRUE)
+  ) %>%
+  arrange(-mean_delay) %>%
+  left_join(airports, by = c("origin" = "faa")) %>%
+  select(name, mean_delay, median_delay)
+print(departure_delays, n = Inf)
+```
+
+```{r}
+arrival_delays <- flights %>%
+  group_by(dest) %>%
+  filter(n() >= 10) %>%
+  summarise(
+    mean_delay = mean(arr_delay, na.rm = TRUE),
+    median_delay = median(arr_delay, na.rm = TRUE)
+  ) %>%
+  arrange(-mean_delay) %>%
+  left_join(airports, by = c("dest" = "faa")) %>%
+  select(name, mean_delay, median_delay)
+
+print(arrival_delays, n = Inf)
+```
+
+#### b.
+
+```{r}
+head(planes)
+```
+
+```{r}
+fastest_aircraft <- flights %>%
+  # Calculate average speed for each flight
+  mutate(average_speed_mph = distance / (air_time / 60)) %>%
+  # Get the model of each aircraft
+  left_join(planes, by = "tailnum") %>%
+  group_by(model) %>%
+  summarise(
+    avg_speed = mean(average_speed_mph, na.rm = TRUE),
+    num_flights = n()
+  ) %>%
+  # Order by average speed and take the top one
+  arrange(-avg_speed) %>%
+  slice(1)
+
+print(fastest_aircraft)
+```
+
+## Problem 2:
+
+```{r}
+library(dlnm)
+data(chicagoNMMAPS)
+nnmaps <- chicagoNMMAPS
+```
+
+```{r}
+get_temp <- function(month, year, data, celsius = FALSE, average_fn = mean) {
+  
+  # Convert month to a consistent format
+  if (is.character(month)) {
+    month_nu <- match(tolower(month), tolower(month.abb))
+    if (is.na(month_nu)) {
+      month_nu <- match(tolower(month), tolower(month.name))
+    }
+    month <- month_nu
+  }
+  
+  # Error messages
+  if (!is.numeric(month) || month < 1 || month > 12) {
+    return("Invalid month provided.")
+  }
+  
+  if (!is.numeric(year) || year < min(data$year) || year > max(data$year)) {
+    return("Year out of range.")
+  }
+  
+  # Calculate average temperature
+  avg_temp <- data %>%
+    filter(month == month, year == year) %>%
+    summarise(average = average_fn(temp)) %>%
+    pull(average)
+  
+  # Convert to Celsius if required
+  if (celsius == TRUE) {
+    avg_temp <- (avg_temp - 32) * 5/9
+  }
+  
+  return(avg_temp)
+}
+```
+
+```{r}
+# Test the given examples
+print(get_temp("Apr", 1999, data = nnmaps))
+print(get_temp("Apr", 1999, data = nnmaps, celsius = TRUE))
+print(get_temp(10, 1998, data = nnmaps, average_fn = median))
+print(get_temp(13, 1998, data = nnmaps))
+print(get_temp(2, 2005, data = nnmaps))
+print(get_temp("November", 1999, data =nnmaps, celsius = TRUE,
+               average_fn = function(x) {
+                 x %>% sort -> x
+                 x[2:(length(x) - 1)] %>% mean %>% return
+               }))
+```
+
+## Problem 3:
+
+``` sas
+proc import OUT=DATA_3
+			DATAFILE="/home/u63653250/sasuser.v94/recs2020_public_v5.csv"
+            DBMS=csv
+            REPLACE;
+run;
+
+/* a. */
+proc sql;
+    /* Sum the weights by state */
+    create table state_weights as 
+    select state_name, 
+           sum(NWEIGHT) as total_weight 
+    from DATA_3
+    group by state_name;
+    
+    /* Sort by weights and get the state with the highest weight */
+    create table max_state as
+    select state_name, total_weight, 
+           (total_weight / (select sum(total_weight) from state_weights))*100 as percent 
+    from state_weights
+    having total_weight = max(total_weight);
+    
+    /* Get the percentage for Michigan */
+    create table michigan_pct as
+    select state_name, 
+           (total_weight / (select sum(total_weight) from state_weights))*100 as percent 
+    from state_weights
+    where state_name = "Michigan";
+    
+quit;
+
+/* Print the results */
+proc print data=max_state; 
+    title "State with the Highest Percentage of Records";
+run;
+
+proc print data=michigan_pct; 
+    title "Percentage of Records for Michigan";
+run;
+
+/* b. */
+/* Filter data */
+data positive_cost;
+    set DATA_3;
+    if DOLLAREL > 0;
+run;
+
+/* Generate histogram */
+proc sgplot data=positive_cost;
+    histogram DOLLAREL;
+    title "Histogram of Total Electricity Cost (for Positive Costs)";
+    xaxis label="Total Electricity Cost in Dollars";
+    yaxis label="Frequency";
+run;
+
+/* c. */
+/* Create a new dataset with the log transformation */
+data log_cost;
+    set DATA_3;
+    if DOLLAREL > 0;
+    log_DOLLAREL = log(DOLLAREL);
+run;
+
+/* Generate histogram for the log-transformed value */
+proc sgplot data=log_cost;
+    histogram log_DOLLAREL;
+    title "Histogram of Log of Total Electricity Cost";
+    xaxis label="Natural Log of Total Electricity Cost in Dollars";
+    yaxis label="Frequency";
+run;
+
+/* d. */
+data log_cost_data;
+    set DATA_3;
+    if DOLLAREL > 0;
+    log_DOLLAREL = log(DOLLAREL);
+run;
+
+proc reg data=log_cost_data;
+    model log_DOLLAREL = TOTROOMS PRKGPLC1;
+    weight NWEIGHT;
+    output out=outpredicted p=predicted;
+    title "Linear Regression of Log of Electricity Cost on Number of Rooms and Garage Presence";
+run;
+
+/* e. */
+data outpredicted2;
+   set outpredicted;
+   pred_DOLLAREL = exp(predicted);
+run;
+
+proc sgplot data=outpredicted2;
+   scatter x=DOLLAREL y=pred_DOLLAREL;
+   xaxis label="Actual Total Electricity Cost";
+   yaxis label="Predicted Total Electricity Cost";
+   title "Scatterplot of Predicted vs. Actual Total Electricity Costs";
+run;
+```
+
+## Problem 4:
+
+#### a.
+
+The Codebook was generated by Stata.
+
+#### b.
+
+``` sas
+PROC IMPORT OUT= WORK.MYDATA
+            DATAFILE= "/home/u63653250/sasuser.v94/public2022.csv" 
+            DBMS=CSV REPLACE;
+     GETNAMES=YES;
+     DATAROW=2; 
+RUN;
+
+PROC SQL;
+    CREATE TABLE new_dataset AS
+    SELECT B3, ND2, B7_b, GH1, ppeducat, race_5cat 
+    FROM WORK.MYDATA;
+QUIT;
+
+PROC SQL;
+    CREATE TABLE no_missing_data AS
+    SELECT *
+    FROM WORK.new_dataset
+    WHERE B3 IS NOT MISSING AND ND2 IS NOT MISSING 
+    AND B7_b IS NOT MISSING AND GH1 IS NOT MISSING AND ppeducat IS NOT MISSING AND race_5cat IS NOT MISSING;
+QUIT;
+
+PROC EXPORT 
+    DATA=WORK.no_missing_data 
+    OUTFILE="/home/u63653250/sasuser.v94/data_4.dta" 
+    DBMS=DTA 
+    REPLACE; 
+RUN;
+```
+
+#### c.
+
+``` stata
+. use "D:\Umich\Sem3\STATS 506\repo_1\data_4.dta", clear
+
+. 
+end of do-file
+```
+
+#### d.
+
+``` stata
+. local vars = c(k)
+
+
+. display "Number of observations: " _N
+Number of observations: 11667
+
+. display "Number of variables: " `vars'
+Number of variables: 8
+
+. 
+end of do-file
+```
+
+The number of observations is 11667, and the number of variables I extracted is 8.
+
+#### e.
+
+``` stata
+. gen B3_binary = . 
+(11,667 missing values generated)
+
+. replace B3_binary = 1 if B3 == "Much worse off" | B3 == "Somewhat worse off"
+(4,296 real changes made)
+
+. replace B3_binary = 0 if B3 == "About the same" | B3 == "Somewhat better off" 
+> | B3 == "Much better off"
+(7,371 real changes made)
+
+. 
+end of do-file
+```
+
+#### d.
+
+``` stata
+. svyset CaseID [pw=weight_pop]
+
+Sampling weights: weight_pop
+             VCE: linearized
+     Single unit: missing
+        Strata 1: <one>
+ Sampling unit 1: CaseID
+           FPC 1: <zero>
+
+. 
+end of do-file
+```
+
+#### e.
+
+``` stata
+. svy: logistic B3_binary i.ND2_num i.B7_b_num i.GH1_num i.ppeducat_num i.race_5
+> cat_num
+(running logistic on estimation sample)
+
+Survey: Logistic regression
+
+Number of strata =      1                        Number of obs   =      11,667
+Number of PSUs   = 11,667                        Population size = 255,114,223
+                                                 Design df       =      11,666
+                                                 F(17, 11650)    =       56.70
+                                                 Prob > F        =      0.0000
+
+-------------------------------------------------------------------------------
+              |             Linearized
+    B3_binary | Odds ratio   std. err.      t    P>|t|     [95% conf. interval]
+--------------+----------------------------------------------------------------
+      ND2_num |
+ Much higher  |   1.063807   .0909221     0.72   0.469     .8997132    1.257828
+  Much lower  |   .8457762   .1267008    -1.12   0.264     .6305633    1.134442
+Somewhat h..  |   .9803765   .0539256    -0.36   0.719     .8801722    1.091989
+Somewhat l..  |   .8256906   .1575442    -1.00   0.315     .5680528    1.200179
+              |
+     B7_b_num |
+        Good  |   1.971658   .6940259     1.93   0.054     .9889547    3.930851
+   Only fair  |   3.953007   1.369017     3.97   0.000     2.004963    7.793792
+        Poor  |   12.00263   4.157008     7.18   0.000     6.087504    23.66537
+              |
+      GH1_num |
+Own your ..)  |   1.517136   .1569061     4.03   0.000     1.238745    1.858092
+Own your h..  |   1.414155   .1405931     3.49   0.000      1.16376    1.718427
+    Pay rent  |   1.387456   .1431345     3.17   0.002     1.133437    1.698404
+              |
+ ppeducat_num |
+High scho..)  |   1.164239   .0677651     2.61   0.009     1.038706    1.304944
+No high sc..  |   1.257134   .1251779     2.30   0.022     1.034225    1.528087
+Some colle..  |   1.129002   .0615152     2.23   0.026     1.014638    1.256257
+              |
+race_5cat_num |
+       Black  |   .7794126   .1139209    -1.71   0.088     .5852491    1.037992
+    Hispanic  |   1.340777   .1887265     2.08   0.037      1.01749    1.766784
+       Other  |   1.612545   .3308172     2.33   0.020     1.078618     2.41077
+       White  |   1.579012   .1989463     3.63   0.000     1.233468    2.021357
+              |
+        _cons |   .0453271   .0169819    -8.26   0.000      .021748    .0944705
+-------------------------------------------------------------------------------
+Note: _cons estimates baseline odds.
+
+. 
+end of do-file
+```
+
+From the output, we can see that all p-values for each level of ND2_num are larger than 0.05, there is no significant difference between each level. Therefore, we can conclude that based on the output, whether the respondent's family is better off, the same, or worse off finanicially compared to 12 month's ago cannot be predicted by thinking that the chance of experiencing a natural disaster or severe weather event will be higher, lower or about the same in 5 years.
+
+#### f.
+
+```{r}
+library(haven)
+data <- read_dta("data_4_new.dta")
+```
+
+```{r}
+library(survey)
+design <- svydesign(id = ~ CaseID, weight = ~ weight_pop, data = data)
+```
+
+```{r, warning=FALSE}
+model <- svyglm(B3_binary ~ factor(ND2_num) + factor(B7_b_num) + factor(GH1_num) + factor(ppeducat_num) + factor(race_5cat_num), design = design, family = binomial(link="logit"))
+```
+
+```{r}
+summary(model)
+```
+
+```{r, warning=FALSE}
+null_model <- svyglm(B3_binary ~ 1, design = design, family = binomial(link="logit"))
+
+mcfadden_r2 <- 1 - as.numeric(logLik(model) / logLik(null_model))
+mcfadden_r2
+```
