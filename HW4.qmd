@@ -323,7 +323,7 @@ The number of observations is 11667, and the number of variables I extracted is 
 end of do-file
 ```
 
-#### d.
+#### f.
 
 ``` stata
 . svyset CaseID [pw=weight_pop]
@@ -338,8 +338,6 @@ Sampling weights: weight_pop
 . 
 end of do-file
 ```
-
-#### e.
 
 ``` stata
 . svy: logistic B3_binary i.ND2_num i.B7_b_num i.GH1_num i.ppeducat_num i.race_5
@@ -395,7 +393,7 @@ end of do-file
 
 From the output, we can see that all p-values for each level of ND2_num are larger than 0.05, there is no significant difference between each level. Therefore, we can conclude that based on the output, whether the respondent's family is better off, the same, or worse off finanicially compared to 12 month's ago cannot be predicted by thinking that the chance of experiencing a natural disaster or severe weather event will be higher, lower or about the same in 5 years.
 
-#### f.
+#### g&h.
 
 ```{r}
 library(haven)
