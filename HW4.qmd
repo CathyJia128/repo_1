@@ -214,7 +214,7 @@ data log_cost_data;
     log_DOLLAREL = log(DOLLAREL);
 run;
 
-proc reg data=log_cost_data;
+proc reg data=log_cost_data plots(maxpoints=none);
     model log_DOLLAREL = TOTROOMS PRKGPLC1;
     weight NWEIGHT;
     output out=outpredicted p=predicted;
