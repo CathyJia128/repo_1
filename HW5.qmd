@@ -1,0 +1,321 @@
+---
+title: "STATS 506 HW5"
+author: "Yixuan Jia"
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+## Problem 1
+
+```{r, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(methods)
+library(dlnm)
+```
+
+```{r}
+data(chicagoNMMAPS)
+```
+
+#### Part a.
+
+```{r}
+monthly_avg <- chicagoNMMAPS %>%
+  mutate(month = as.integer(month),
+         season = case_when(
+           month %in% 1:3 ~ "Winter",
+           month %in% 4:6 ~ "Spring",
+           month %in% 7:9 ~ "Summer",
+           month %in% 10:12 ~ "Fall"
+         )) %>%
+  group_by(year, month, season) %>%
+  summarise(mean_temp = mean(temp, na.rm = TRUE), .groups = "drop")
+
+ggplot(monthly_avg, aes(x = month, y = mean_temp, color = season, group = season)) +
+  geom_point() +
+  geom_line() +
+  scale_x_discrete(limits = c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")) +
+  scale_color_manual(values = c("Winter" = "blue", "Spring" = "green", "Summer" = "red", "Fall" = "orange")) +
+  labs(title = "Mean Monthly Temperature in Celsius",
+       x = "month",
+       y = "average monthly temperature in celsius",
+       color = "Season") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+#### Part b.
+
+```{r}
+monthly_avg <- chicagoNMMAPS %>%
+  group_by(month, year) %>%
+  summarise(
+    mean_temp = mean(temp, na.rm = TRUE),
+    mean_O3 = mean(o3, na.rm = TRUE),
+    mean_PM10 = mean(pm10, na.rm = TRUE),
+    mean_dewpoint = mean(dptp, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(
+    cols = starts_with("mean_"), 
+    names_to = "variable", 
+    values_to = "mean_value"
+  )
+
+# Create the plot
+ggplot(monthly_avg, aes(x = month, y = mean_value, color = variable, group = variable)) +
+  geom_line() +
+  scale_x_discrete(limits = c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")) +
+  scale_color_manual(values = c("mean_temp" = "red", 
+                                "mean_O3" = "green", 
+                                "mean_PM10" = "orange", 
+                                "mean_dewpoint" = "blue")) +
+  labs(title = "Mean Monthly Values of Temperature, O3, PM10, and Dewpoint",
+       x = "Month",
+       y = "Mean Value",
+       color = "Variable") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+#### From the plot we can see that PM10 seems to have the least seasonal trend.
+
+## Problem 2
+
+#### Part a.
+
+#### Define the poly class
+
+```{r}
+setClass("poly",
+         slots = c(coefficients = "vector",
+                   powers = "vector"))
+```
+
+#### This is a function for future use (to extract the terms in the poly). I believe the users would like to input a string for convenience, so this function is simply for breaking up the string into terms. The construction method is after this console.
+
+```{r}
+extract_poly_terms <- function(term) {
+  # Initialize vectors
+  sign <- "positive"
+  coefficient <- NA
+  power <- NA
+  
+  # Check for '+' or '-' at the beginning of the term
+  if (grepl("^[+]", term)) {
+    sign <- "positive"
+  } else if (grepl("^[-]", term)) {
+    sign <- "negative"
+  }
+  
+  # Detect if there's an 'x'
+  if (grepl("x", term)) {
+    # Extract the number before 'x' if it exists, otherwise use 1
+    num_before_x <- gsub("x.*", "", term)
+    num_before_x <- as.numeric(gsub("^[+-]?\\s*(\\d+)$", "\\1", num_before_x))
+    if (num_before_x == "" || num_before_x == "+" || num_before_x == "-" || is.na(num_before_x)) {
+      coefficient <- 1
+    } else {
+      coefficient <- as.numeric(num_before_x)
+    }
+
+    # Detect if there's a '^' and extract the power
+    if (grepl("\\^", term)) {
+      power <- as.numeric(gsub(".*\\^", "", term))
+    } else {
+      power <- 1
+    }
+  } else {
+    # The situation when there's no 'x'
+    power <- 0
+    pattern <- "^\\s*([+-]?\\s*\\d+)\\s*$"
+
+    if (grepl(pattern, term)) {
+      match <- regmatches(term, regexpr(pattern, term))
+      number_str <- sub(pattern, "\\1", match)
+      number_str <- gsub("\\s", "", number_str)
+      coefficient = abs(as.numeric(number_str))
+    }
+  }
+  
+  if (sign == "negative"){coefficient <- -coefficient}
+  
+  return(list(coefficient = coefficient, power = power))
+}
+```
+
+#### The constructor
+
+```{r}
+make_poly <- function(poly_str) {
+  coefficients <- numeric()
+  powers <- integer()
+  
+  parts <- unlist(strsplit(poly_str, "\\s(?=[+-])", perl = TRUE))
+  
+  for (part in parts) {
+    term <- extract_poly_terms(part)
+    coefficients <- c(coefficients, term$coefficient)
+    powers <- c(powers, term$power)
+  }
+  
+  poly_instance <- new("poly", coefficients = coefficients, powers = powers)
+  return(poly_instance)
+}
+```
+
+#### The Validator
+
+```{r}
+setValidity("poly", function(object) {
+  if (!is.numeric(object@coefficients)) {
+    stop(paste("The coefficients slot must contain only numeric values."))
+  }
+  if (!is.numeric(object@powers)) {
+    stop(paste("The powers slot must contain only numeric values."))
+  }
+  return(TRUE)
+})
+```
+
+#### The show method
+
+```{r}
+setMethod("show", "poly", function(object) {
+  terms <- character()
+  
+  for (i in seq_along(object@coefficients)) {
+    coeff <- object@coefficients[i]
+    pow <- object@powers[i]
+    
+    if (coeff == 0) {
+      next
+    }
+    
+    if (pow == 0) {
+      terms <- c(terms, as.character(coeff))
+    } else if (pow == 1) {
+      # x to the power of 1
+      if (coeff == 1) {
+        terms <- c(terms, "x")
+      } else if (coeff == -1) {
+        terms <- c(terms, "-x")
+      } else {
+        terms <- c(terms, paste(coeff, "x", sep = ""))
+      }
+    } else {
+      # x to the power of pow
+      if (coeff == 1) {
+        terms <- c(terms, paste("x^", pow, sep = ""))
+      } else if (coeff == -1) {
+        terms <- c(terms, paste("-x^", pow, sep = ""))
+      } else {
+        terms <- c(terms, paste(coeff, "x^", pow, sep = ""))
+      }
+    }
+  }
+  
+  polynomial_str <- paste(terms, collapse = " + ")
+  polynomial_str <- gsub(" \\+ -", " - ", polynomial_str)
+  polynomial_str <- gsub("^\\+ ", "", polynomial_str)
+  
+  cat("The polynomial is: ")
+  cat(polynomial_str, "\n")
+  cat("Coefficient List: ")
+  cat(object@coefficients)
+  cat("\n")
+  cat("Power List: ")
+  cat(object@powers)
+})
+```
+
+#### Addition and subtraction
+
+```{r}
+# Addition
+setMethod("+", signature(e1 = "poly", e2 = "poly"), function(e1, e2) {
+  new_coefficients <- numeric()
+  new_powers <- sort(union(e1@powers, e2@powers), decreasing=TRUE)
+  
+  for (pow in new_powers) {
+    coeff1 <- ifelse(pow %in% e1@powers, e1@coefficients[which(e1@powers == pow)], 0)
+    coeff2 <- ifelse(pow %in% e2@powers, e2@coefficients[which(e2@powers == pow)], 0)
+    new_coefficients <- c(new_coefficients, coeff1 + coeff2)
+  }
+  
+  new("poly", coefficients = new_coefficients, powers = new_powers)
+})
+
+# Substraction
+setMethod("-", signature(e1 = "poly", e2 = "poly"), function(e1, e2) {
+  new_coefficients <- numeric()
+  new_powers <- sort(union(e1@powers, e2@powers), decreasing=TRUE)
+  
+  for (pow in new_powers) {
+    coeff1 <- ifelse(pow %in% e1@powers, e1@coefficients[which(e1@powers == pow)], 0)
+    coeff2 <- ifelse(pow %in% e2@powers, e2@coefficients[which(e2@powers == pow)], 0)
+    new_coefficients <- c(new_coefficients, coeff1 - coeff2)
+  }
+  new("poly", coefficients = new_coefficients, powers = new_powers)
+})
+```
+
+#### Part (b)
+
+```{r, warning=FALSE}
+p1 <- make_poly("3x^2 + 2")
+p2 <- make_poly("7x^3 - 2x^2 - x + 17")
+p1
+p2
+p1+p2
+p1-p2
+```
+
+## Problem 3
+
+```{r, warning=FALSE}
+library(data.table)
+library(nycflights13)
+```
+
+```{r}
+data(flights)
+data(airports)
+data(planes)
+setDT(flights)
+setDT(airports)
+setDT(planes)
+```
+
+#### Part a.
+
+```{r}
+departure_delay <- flights[, .(mean = mean(dep_delay, na.rm = TRUE),
+                      median = median(dep_delay, na.rm = TRUE),
+                      num = .N), by = .(faa = origin)][num > 10]
+departure_delay <- departure_delay[airports, on = .(faa)]
+departure_delay <- departure_delay[!is.na(mean) & !is.na(median), .(name, mean, median)][order(-mean)]
+departure_delay
+```
+
+```{r}
+arrival_delay <- flights[, .(mean = mean(arr_delay, na.rm = TRUE),
+                      median= median(arr_delay, na.rm = TRUE),
+                      num = .N), by = .(faa = dest)][num > 10]
+arrival_delay <- merge(x = arrival_delay, y = airports, by = 'faa', all.x = TRUE)
+arrival_delay <- arrival_delay[, name := fcoalesce(name, faa)]
+arrival_delay <- arrival_delay[, .(name, mean, median)][order(-mean)]
+arrival_delay
+```
+
+#### Part b.
+
+```{r}
+flights[planes, on = .(tailnum), model := i.model]
+
+flights[, .(time = air_time / 60, mph = distance / (air_time / 60)), by = .(model)][, .(avgmph = mean(mph, na.rm = TRUE), nflights = .N), by = .(model)][order(-avgmph)][1]
+```
