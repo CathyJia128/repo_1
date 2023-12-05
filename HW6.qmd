@@ -1,0 +1,161 @@
+---
+title: "STATS506 HW6"
+author: "Yixuan Jia"
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+```{r,warnings=FALSE}
+library(nycflights13)
+library(dplyr)
+library(parallel)
+library(tidyr)
+```
+
+## Non-Parallel
+
+```{r}
+# Define the stratified bootstrap function
+stratified_bootstrap <- function(data, group_col, strata_col, response_col, n_bootstrap) {
+  unique_group <- unique(data[[group_col]])
+  bootstrap_results <- list()
+
+  for (group in unique_group) {
+  group_data <- data[data[, group_col] == group, ]
+  bootstrap_means <- numeric(n_bootstrap)
+
+  sub_strata_sizes <- table(group_data[[strata_col]]) 
+  
+  for (i in 1:n_bootstrap) {
+    weighted_means <- numeric(length(sub_strata_sizes))
+    
+    for (dest in names(sub_strata_sizes)) {
+      dest_data <- group_data[group_data[, strata_col] == dest, ]
+      resampled_data <- dest_data[sample(nrow(dest_data), nrow(dest_data), replace = TRUE), ]
+      weighted_means[dest] <- mean(resampled_data[[response_col]], na.rm = TRUE) * sub_strata_sizes[dest]
+    }
+
+    bootstrap_means[i] <- sum(weighted_means) / sum(sub_strata_sizes)
+  }
+  
+  bootstrap_results[[group]] <- bootstrap_means
+}
+  
+  return(bootstrap_results)
+}
+
+# Apply stratified bootstrap to the flights data
+flights_data <- nycflights13::flights %>% filter(!is.na(air_time)) %>% select(origin, dest, air_time)
+boot_results <- stratified_bootstrap(flights_data, "origin", "dest", "air_time", 1000)
+
+# Calculate system time
+system_time_non <- system.time(stratified_bootstrap(flights_data, "origin", "dest", "air_time", 1000))
+```
+
+#### System time for non-parallel stratified bootstrap
+
+```{r}
+print(system_time_non)
+```
+
+```{r}
+calculate_ci <- function(bootstrap_means, confidence_level = 0.95) {
+  z <- qnorm(1 - (1 - confidence_level) / 2)
+  
+  sapply(bootstrap_means, function(x) {
+    mean_x <- mean(x)
+    se_x <- sd(x)
+    c(
+      Mean = mean_x,
+      Lower_CI = mean_x - z * se_x,
+      Upper_CI = mean_x + z * se_x
+    )
+  })
+}
+```
+
+```{r}
+conf_intervals <- calculate_ci(boot_results)
+conf_intervals_df <- as.data.frame(conf_intervals)
+conf_intervals_df
+```
+
+## Parallel Processing
+
+```{r}
+detectCores()
+```
+
+#### parLapply
+
+```{r}
+# Define the bootstrap function for a single group
+bootstrap_single_group <- function(group_data, strata_col, response_col, n_bootstrap) {
+  sub_strata_sizes <- table(group_data[[strata_col]])
+  bootstrap_means <- numeric(n_bootstrap)
+
+  for (i in 1:n_bootstrap) {
+    weighted_means <- numeric(length(sub_strata_sizes))
+    
+    for (dest in names(sub_strata_sizes)) {
+      dest_data <- group_data[group_data[, strata_col] == dest, ]
+      resampled_data <- dest_data[sample(nrow(dest_data), nrow(dest_data), replace = TRUE), ]
+      weighted_means[dest] <- mean(resampled_data[[response_col]], na.rm = TRUE) * sub_strata_sizes[dest]
+    }
+
+    bootstrap_means[i] <- sum(weighted_means) / sum(sub_strata_sizes)
+  }
+
+  return(bootstrap_means)
+}
+
+# Applying the function to the flights dataset
+unique_origins <- unique(flights_data$origin)
+# Create a cluster
+cl <- makeCluster(19)
+clusterExport(cl, varlist = c("bootstrap_single_group", "flights_data"))
+
+# Use parLapply to apply the function
+boot_results <- parLapply(cl, unique_origins, function(airport) {
+  group_data <- subset(flights_data, origin == airport)
+  bootstrap_single_group(group_data, "dest", "air_time", 1000)
+})
+
+names(boot_results) <- unique_origins
+
+# Calculate system time
+system_time_par <- system.time(parLapply(cl, unique_origins, function(airport) {
+  group_data <- subset(flights_data, origin == airport)
+  bootstrap_single_group(group_data, "dest", "air_time", 1000)
+}))
+
+stopCluster(cl)
+```
+
+#### System time for parallel stratified bootstrap
+
+```{r}
+system_time_par
+```
+
+```{r}
+conf_intervals <- calculate_ci(boot_results)
+conf_intervals_df <- as.data.frame(conf_intervals)
+conf_intervals_df
+```
+
+## Performance Difference between the two methods
+
+```{r}
+difference <- system_time_non - system_time_par
+```
+
+```{r}
+print(paste("The elapsed time for non-parallel stratified bootstrap is: ", system_time_non["elapsed"], " seconds."))
+
+print(paste("The elapsed time for parallel stratified bootstrap is: ", system_time_par["elapsed"], " seconds."))
+
+print(paste("The performance difference between two methods is: ", difference["elapsed"], " seconds."))
+```
