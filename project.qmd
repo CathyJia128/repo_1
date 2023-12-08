@@ -1,0 +1,302 @@
+---
+title: "506 project"
+author: "Yixuan Jia"
+format: html
+editor: visual
+---
+
+```{r, warning=FALSE}
+library(survey)
+library(spatstat)
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(randomForest)
+library(car)
+```
+
+```{r}
+cbecs2018 <- read_excel('cbecs2018_final_public.xlsx')
+codebook <- read_excel('2018microdata_codebook.xlsx')
+```
+
+```{r}
+finalwt_columns <- grepl("^FINALWT", names(cbecs2018))
+finalwt_columns <- names(cbecs2018)[finalwt_columns]
+```
+
+Factorize the categorical responses
+
+```{r}
+# Loop through each row of the codebook
+for (i in 1:nrow(codebook)) {
+    var_name <- codebook$VarName[i]
+    var_type <- codebook$VarType[i]
+    
+    if (var_name %in% finalwt_columns) {
+        next
+    }
+    
+    if (var_type == "Num") {
+        cbecs2018[[var_name]] <- as.factor(cbecs2018[[var_name]])
+    } else if (var_type == "Numerical") {
+        cbecs2018[[var_name]] <- as.numeric(cbecs2018[[var_name]])
+    }
+}
+```
+
+Selected variables based on observation and knowledge
+
+```{r}
+variable_selected <- c(
+"YRCONC", "FACACT", "MONUSE", "OCCUPYP", "LODOCCP", "SQFT", "NWKER", 
+"OPEN24", "OPNMF", "OPNWE", "WKHRS", "MAINHT", "MAINCL", "WOEXPC", 
+"SNACKSF", "FASTFDSF", "CAFSF", "FDPREPSF", "RFGRSN", "RFGCOMPN", 
+"RFGWIN", "RFGOPN", "RFGCLN", "RFGVNN", "RFGICN", "RFGSTP", "PCTERMN",
+"LAPTPN", "LGOFFDEVN", "SMOFFDEVN", "WBOARDSN", "TVVIDEON", "RGSTRN", "ATMN", "LTZHRP", "FLUORP", "CFLRP", "BULBP", "HALOP", "HIDP", "LEDP", "OTLTP", "LTEXPC", "PKLTN", "WINTYP", "HDD65", "CDD65", "MFUSED", "RWSEAT", "PBSEAT", "EDSEAT", "FDSEAT", "DRVTHRU", "HCBED", "NFLOOR",
+"NRSBED", "LODGRM", "NOCC", "CONFSPP", "MEDEQP", "XRAYN", "LTNHRP", "DAYLTP", "MFBTU", "MFHTBTU", "MFCLBTU", "MFLTBTU"
+)
+
+finalwt_columns <- grepl("^FINALWT", names(cbecs2018))
+finalwt_columns <- names(cbecs2018)[finalwt_columns]
+
+columns_of_interest <- c("WLCNS", "RFCNS", "RFCOOL", "RFTILT", "BLDSHP")
+
+other_cols_needed <- c("PUBID", "REGION", "CENDIV")
+
+all_columns_to_keep <- c(variable_selected, columns_of_interest, other_cols_needed, finalwt_columns)
+
+cbecs2018 <- cbecs2018[, all_columns_to_keep]
+```
+
+Drop columns with NA values more than 30% and response not equal to 0
+
+```{r}
+na_percentage <- colMeans(is.na(cbecs2018)) * 100
+cbecs2018 <- cbecs2018[, na_percentage <= 50]
+```
+
+#### Standardize MFBTU by dividing SQFT & Log-transformation
+
+```{r}
+cbecs2018$MFBTU_std <- cbecs2018$MFBTU / cbecs2018$SQFT
+cbecs2018$MFBTU_log <- log(cbecs2018$MFBTU_std)
+```
+
+```{r}
+hist(cbecs2018$MFBTU_std, main = "Histogram of MFBTU_std", xlab = "MFBTU_std", col = "skyblue", border = "black")
+```
+
+```{r}
+hist(cbecs2018$MFBTU_log, main = "Histogram of MFBTU_log", xlab = "MFBTU_log", col = "skyblue", border = "black")
+```
+
+```{r}
+ggplot(cbecs2018, aes(x = WLCNS, fill = WLCNS)) + 
+  geom_bar() +
+  labs(title = "Bar Plot of WLCNS", x = "Category", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(cbecs2018, aes(x = BLDSHP, fill = BLDSHP)) + 
+  geom_bar() +
+  labs(title = "Bar Plot of BLDSHP", x = "Category", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+# Drop columns that start with 'Z'
+columns_to_drop <- grep("^Z", names(cbecs2018), value = TRUE)
+cbecs2018 <- cbecs2018[, !names(cbecs2018) %in% columns_to_drop]
+```
+
+Dealing with other missing values
+
+```{r}
+na_columns <- colnames(cbecs2018)[colSums(is.na(cbecs2018)) > 0]
+numerical_na_columns <- na_columns[sapply(cbecs2018[na_columns], is.numeric)]
+other_na_columns <- setdiff(na_columns, numerical_na_columns)
+```
+
+```{r}
+numerical_na_columns
+```
+
+```{r}
+for (col in numerical_na_columns) {
+    cbecs2018[[col]][is.na(cbecs2018[[col]])] <- 0
+}
+```
+
+```{r}
+for (col in other_na_columns) {
+    levels(cbecs2018[[col]]) <- c(levels(cbecs2018[[col]]), "Not_applicable")
+    cbecs2018[[col]][is.na(cbecs2018[[col]])] <- "Not_applicable"
+}
+```
+
+```{r}
+na_columns_2 <- colnames(cbecs2018)[colSums(is.na(cbecs2018)) > 0]
+na_columns_2
+```
+
+```{r}
+cbecs2018 <- subset(cbecs2018, MFBTU_std != 0)
+```
+
+#### Variable Selection
+
+Now I will use Random Forest to select the most important features. I will be focusing on the influence of construction materials, however, I still need to figure out which other variables affect the consumption the most, so that I can include those variables in order to control the variables in the model.
+
+```{r}
+# Drop a column named 'ELCNS'
+X <- cbecs2018[, !names(cbecs2018) %in% 'ELCNS']
+
+# Drop columns that contain 'BTU'
+columns_to_drop <- grep("BTU", names(X), value = TRUE)
+X <- X[, !names(X) %in% columns_to_drop]
+
+# Drop columns that contain 'EXP'
+columns_to_drop <- grep("EXP", names(X), value = TRUE)
+X <- X[, !names(X) %in% columns_to_drop]
+
+# Drop columns that start with 'FINALWT'
+columns_to_drop <- grep("^FINALWT", names(X), value = TRUE)
+X <- X[, !names(X) %in% columns_to_drop]
+```
+
+```{r}
+y <- cbecs2018$MFBTU_std
+```
+
+```{r}
+rf <- randomForest(X, y, ntree=500, importance=TRUE)
+```
+
+```{r}
+importances <- importance(rf)
+
+feature_importances <- data.frame(feature = row.names(importances), importance = importances[, '%IncMSE'])
+
+feature_importances <- feature_importances[order(-feature_importances$importance), ]
+
+top_features <- head(feature_importances, 10)
+```
+
+```{r, warning=FALSE}
+samp_wts<-cbecs2018$FINALWT
+rep_wts<-cbecs2018[, grepl("^FINALWT", names(cbecs2018))]
+rep_wts$FINALWT<-NULL
+samp_design<-svrepdesign(weights=samp_wts, repweights=rep_wts,
+ type="JK2", mse=TRUE, data=cbecs2018)
+```
+
+## Modeling
+
+```{r}
+print(top_features)
+```
+
+#### multiple linear regression
+
+```{r, warning=FALSE}
+model <- svyglm(MFBTU_std ~ WLCNS + MAINHT + WKHRS + SQFT + NWKER + NFLOOR + RFGRSN + MAINCL, design = samp_design)
+
+model_shape <- svyglm(MFBTU_std ~ BLDSHP + MAINHT + WKHRS + SQFT + NWKER + NFLOOR + RFGRSN + MAINCL, design = samp_design)
+```
+
+```{r}
+predicted_values <- predict(model, type = "response")
+observed_values <- cbecs2018$MFBTU_std
+rmse <- sqrt(mean((predicted_values - observed_values)^2))
+range <- max(observed_values) - min(observed_values)
+rmse <- rmse/range
+print(paste("RMSE:", rmse))
+```
+
+```{r}
+summary(model)
+```
+
+```{r}
+summary(model_shape)
+```
+
+### model with log link
+
+```{r, warning=FALSE}
+model_log <- svyglm(MFBTU_log ~ WLCNS + MAINHT + WKHRS + SQFT + NWKER + RFGRSN + MAINCL, design = samp_design)
+
+model_log_shape <- svyglm(MFBTU_log ~ BLDSHP + MAINHT + WKHRS + SQFT + NWKER + NFLOOR + RFGRSN + MAINCL, design = samp_design)
+```
+
+```{r}
+predicted_values <- predict(model_log, type = "response")
+observed_values <- cbecs2018$MFBTU_log
+rmse <- sqrt(mean((predicted_values - observed_values)^2))
+range <- max(observed_values) - min(observed_values)
+rmse <- rmse/range
+print(paste("RMSE:", rmse))
+```
+
+```{r}
+summary(model_log)
+```
+
+```{r}
+summary(model_log_shape)
+```
+
+```{r}
+residuals <- residuals(model)
+fitted_values <- fitted(model)
+
+plot(fitted_values, residuals, xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, col = "red")
+```
+
+```{r}
+model_poly <- svyglm(MFBTU_log ~ WLCNS + MAINHT + I(WKHRS^2) + I(SQFT^2) + I(NWKER^2) + I(RFGRSN^2) , design = samp_design)
+summary(model_poly)
+```
+
+```{r}
+residuals <- residuals(model_poly)
+fitted_values <- fitted(model_poly)
+
+plot(fitted_values, residuals, xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, col = "red")
+```
+
+```{r}
+model_poly_shape <- svyglm(MFBTU_log ~ BLDSHP + MAINHT + I(WKHRS^2) + I(SQFT^2) + I(NWKER^2) + I(RFGRSN^2) , design = samp_design)
+summary(model_poly_shape)
+```
+
+```{r}
+predicted_values <- predict(model_poly, type = "response")
+observed_values <- cbecs2018$MFBTU_log
+rmse <- sqrt(mean((predicted_values - observed_values)^2))
+range <- max(observed_values) - min(observed_values)
+rmse <- rmse/range
+print(paste("RMSE:", rmse))
+```
+
+```{r}
+cool_roof_counts <- cbecs2018 %>%
+  group_by(RFCNS) %>%
+  summarise(Cool_Roof_Count = sum(RFCOOL == 1, na.rm = TRUE),
+            Not_Cool_Roof_Count = sum(RFCOOL == 2, na.rm = TRUE))
+
+# Reshape data for plotting
+cool_roof_melted <- reshape2::melt(cool_roof_counts, id.vars = 'RFCNS')
+
+# Plot
+ggplot(cool_roof_melted, aes(x = RFCNS, y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  theme_minimal() +
+  labs(x = "Roof Construction Material", y = "Count", fill = "Roof Type") +
+  scale_fill_manual(values = c("Cool_Roof_Count" = "steelblue", "Not_Cool_Roof_Count" = "red")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
